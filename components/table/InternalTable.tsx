@@ -405,6 +405,13 @@ const InternalTable = <RecordType extends AnyObject = AnyObject>(
     }
 
     if (scroll && scroll.scrollToFirstRowOnChange !== false && internalRef.body.current) {
+      // In virtual mode the body ref IS the horizontal scroll container. Reset
+      // scrollLeft explicitly so the header and body stay in sync after a
+      // sort/filter/paginate re-render (which resets the virtual list's internal
+      // scroll state to 0 but does not fire a scroll event the header can react to).
+      if (virtual) {
+        internalRef.body.current.scrollLeft = 0;
+      }
       scrollTo(0, {
         getContainer: () => internalRef.body.current!,
       });

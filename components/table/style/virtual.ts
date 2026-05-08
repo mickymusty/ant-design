@@ -5,7 +5,7 @@ import type { GenerateStyle } from '../../theme/internal';
 import type { TableToken } from './index';
 
 const genVirtualStyle: GenerateStyle<TableToken, CSSObject> = (token) => {
-  const { componentCls, motionDurationMid, lineWidth, lineType, tableBorderColor, calc } = token;
+  const { componentCls, lineWidth, lineType, tableBorderColor, calc } = token;
 
   const tableBorder = `${unit(lineWidth)} ${lineType} ${tableBorderColor}`;
 
@@ -15,6 +15,12 @@ const genVirtualStyle: GenerateStyle<TableToken, CSSObject> = (token) => {
     [`${componentCls}-wrapper`]: {
       // ========================== Row ==========================
       [`${componentCls}-tbody-virtual`]: {
+        // Hint the browser to promote the scroll container to a compositor layer,
+        // avoiding main-thread involvement on each scroll frame.
+        [`${componentCls}-tbody-virtual-holder`]: {
+          willChange: 'scroll-position',
+        },
+
         [`${componentCls}-tbody-virtual-holder-inner`]: {
           [`
             & > ${componentCls}-row,
@@ -28,7 +34,11 @@ const genVirtualStyle: GenerateStyle<TableToken, CSSObject> = (token) => {
 
         [`${componentCls}-cell`]: {
           borderBottom: tableBorder,
-          transition: `background-color ${motionDurationMid}`,
+          // Intentionally no transition here. The base table style applies
+          // `background-color` transition to cells, but in virtual mode rows
+          // mount/unmount on every scroll frame. Hundreds of simultaneous
+          // transition starts block the main thread and cause scroll to freeze.
+          transition: 'none',
         },
 
         [`${componentCls}-expanded-row`]: {

@@ -1,193 +1,181 @@
-# Ant Design 项目开发指南
+# CLAUDE.md
 
-> 本文件为 AI 编程助手提供项目上下文和开发规范。
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## 项目信息
+## Project Overview
 
-- React 组件库，发布为 npm 包 `antd`
-- 使用 TypeScript 和 React 开发
-- 采用 CSS-in-JS 架构（基于 `@ant-design/cssinjs`）
-- 支持 Design Token 主题系统、暗色模式、RTL 布局、SSR、国际化（150+ 语言）
+- React component library published as npm package `antd`
+- TypeScript + React (peer deps: React ≥18)
+- CSS-in-JS via `@ant-design/cssinjs` with a three-tier Design Token system
+- Supports dark mode, RTL layout, SSR, and 150+ locales
 
-### 项目结构
+## Commands
 
-```
-ant-design/
-├── components/              # 组件源代码（84+ 组件）
-│   ├── component-name/      # 单个组件目录
-│   │   ├── ComponentName.tsx      # 主组件实现
-│   │   ├── demo/                  # 演示代码（*.tsx 和 *.md）
-│   │   ├── style/                 # 样式系统（index.ts / token.ts）
-│   │   ├── __tests__/            # 单元测试
-│   │   ├── index.en-US.md        # 英文文档
-│   │   ├── index.zh-CN.md        # 中文文档
-│   │   └── index.tsx             # 导出入口
-│   ├── _util/                   # 共享工具函数库
-│   ├── theme/                   # 主题系统
-│   └── locale/                  # 国际化文本
-├── tests/                       # 测试工具和共享测试
-├── docs/                        # 站点文档
-├── CHANGELOG.zh-CN.md           # 中文更新日志
-└── CHANGELOG.en-US.md           # 英文更新日志
+```bash
+npm start                           # Start doc site dev server (runs prestart: version, tokens, style)
+npm test                            # Run all unit tests
+npx jest --testPathPattern button   # Run tests for a single component
+npm run tsc                         # TypeScript type check (no emit)
+npm run lint                        # Full lint: tsc + eslint + biome + markdown + changelog
+npm run lint:script                 # ESLint only
+npm run lint:biome                  # Biome lint only
+npm run format                      # Biome format (write)
+npm run compile                     # Compile to es/ and lib/
+npm run build                       # Full build: compile + dist (UMD)
+npm run style                       # Generate CSS files from CSS-in-JS
+npm run test:node                   # Node.js SSR tests
+npm run test:image                  # Visual regression (puppeteer)
 ```
 
----
+> `npm start` runs a lengthy `prestart` chain (version generation, token statistics, style build). First start takes a few minutes.
 
-## 通用编码规范
+## Architecture
 
-- 判断数据类型时，优先使用 `components/_util/is.ts` 中已有的方法，例如 `isNumber`、`isString`、`isPlainObject`、`isFunction`、`isThenable`、`isPrimitive`、`isNonNullable`。
-- 仅当 `components/_util/is.ts` 中没有合适方法，或当前场景需要更严格、更特殊的判断逻辑时，再使用内联 `typeof`、`instanceof` 等判断方式。
+### Token System (three tiers)
 
----
+```
+SeedToken          →  MapToken / AliasToken  →  ComponentToken
+(brand colors,        (color palettes,           (per-component
+ base sizes)           spacing scale,              overrides)
+                       typography)
+```
 
-## Demo 导入规范
+- `components/theme/interface/seeds.ts` — SeedToken definitions
+- `components/theme/interface/alias.ts` — AliasToken (global design tokens used by all components)
+- `components/theme/themes/` — algorithms that map seed → alias (default, dark, compact)
+- Each component's `style/token.ts` defines its `ComponentToken` and `prepareComponentToken` factory
 
-- 常规 `components/**/demo/` 文件在引入 Ant Design 组件、组件内部模块、工具方法、变量、类型定义时，一律使用绝对路径导入，不使用相对路径导入。
-- `components/**/demo/_semantic*.tsx` 属于语义文档专用 demo，是例外场景：允许通过相对路径引用 `.dumi/hooks/useLocale`、`.dumi/theme/common/*` 等站点侧辅助模块。
-- `.dumi/` 目录内部的站点实现文件可按现有目录结构使用相对路径引用本目录模块；当引用仓库内 Ant Design 组件入口时，优先使用项目公开入口或已配置别名。
-- 允许的导入形式应优先使用项目公开入口或已配置别名，例如：`antd`、`antd/es/*`、`antd/lib/*`、`antd/locale/*`、`@@/*`。
-- `.dumi/*` 不是仓库通用的 TS 路径别名；如需引用 `.dumi` 内部模块，请按文件位置使用相对路径。
-- 常规 demo 文件中，禁止使用 `..`、`../xxx`、`../../xxx`、`./xxx` 这类相对路径去引用组件实现、内部模块、方法、变量、类型，包含跨 demo、跨目录复用的场景。
-- 常规 demo 与 `.dumi` 文件之间不要互相相对引用（`_semantic*.tsx` 等站点语义 demo 复用 `.dumi` 辅助模块除外）。如果需要复用少量逻辑，优先内联，或提取到可通过绝对路径访问的公共位置。
+### CSS-in-JS Style Registration
 
-## Test 导入规范
+Every component registers its styles via `genStyleHooks` (exported from `components/theme/internal`):
 
-- 本规范适用于 `components/**/__tests__/` 下的测试文件。
-- 在这些目录下引入 Ant Design 组件，或引入组件内部模块、工具方法、变量、类型定义时，一律使用相对路径导入，不使用绝对路径导入。
-- 测试文件应优先从当前组件目录、相邻内部模块或共享测试工具目录通过相对路径引用，例如：`..`、`../index`、`../xxx`、`../../_util/*`、`../../../tests/shared/*`。
-- 禁止在 `__tests__` 目录下使用 `antd`、`antd/es/*`、`antd/lib/*`、`antd/locale/*`、`.dumi/*`、`@@/*` 这类绝对路径或别名路径去引用仓库内代码。
-- 如需引用仓库外第三方依赖，仍按依赖包名正常导入，例如 `react`、`@testing-library/react`、`dayjs`。
+```ts
+// style/index.ts pattern
+import { genStyleHooks } from '../../theme/internal';
+import { prepareComponentToken } from './token';
 
----
+export default genStyleHooks('Button', (token) => [
+  genSharedButtonStyle(token),
+  genVariantStyle(token),
+], prepareComponentToken);
+```
 
-## 文档规范
+`genStyleHooks` (defined in `components/theme/util/genStyleUtils.ts`) wires up ConfigContext prefix, `useToken`, CSP, and calls `useStyleRegister` from `@ant-design/cssinjs`. The returned hook is called inside the component to inject styles.
 
-### API 表格格式
+### Component Structure Pattern
 
-| Property | Description | Type                   | Default   | Version |
-| -------- | ----------- | ---------------------- | --------- | ------- |
-| disabled | 是否禁用    | boolean                | false     | -       |
-| type     | 按钮类型    | `primary` \| `default` | `default` | -       |
+```
+components/button/
+├── Button.tsx          # Implementation
+├── index.tsx           # Public export, attaches sub-components
+├── context.ts          # Internal context (if needed)
+├── style/
+│   ├── index.ts        # genStyleHooks call — registers all styles
+│   └── token.ts        # ComponentToken interface + prepareComponentToken
+├── demo/               # Demo files (*.tsx); imports must use 'antd' alias, not relative paths
+├── __tests__/          # Tests use relative imports, never 'antd' alias
+├── index.en-US.md      # English API docs
+└── index.zh-CN.md      # Chinese API docs
+```
 
-- 字符串默认值用反引号，布尔/数字直接写，无默认值用 `-`
-- API 按字母顺序排列，新增属性需声明版本号
+### Shared Test Helpers (`tests/shared/`)
 
-### 文档锚点 ID 规范
+| Helper | Purpose |
+|--------|---------|
+| `mountTest` | Verifies component mounts without errors in basic + size variants |
+| `rtlTest` | Renders component under RTL ConfigProvider, checks snapshot |
+| `demoTest` | Renders all `demo/*.tsx` files as snapshots |
+| `accessibilityTest` | Runs jest-axe accessibility check |
 
-- 中文标题必须手动指定英文锚点：`## 中文标题 {#english-anchor-id}`
-- 锚点 ID 符合 `^[a-zA-Z][\w-:\.]*$`，长度不超过 32 字符
-- FAQ 章节下的锚点必须以 `faq-` 为前缀
-- 同一问题的中英文锚点保持一致
+Use these at the top of every `__tests__/index.test.tsx`.
 
-### 国际化规范
+## Coding Conventions
 
-- 本地化配置文件：`components/locale/`，命名如 `zh_CN.ts`、`en_US.ts`
-- 添加或修改本地化配置时，需同时修改所有语言文件
-- 类型入口：`components/locale/index.tsx`
+### TypeScript
 
----
+- Never use `any` — define precise types
+- Use interfaces (not type aliases) for object structures; name them `ComponentNameProps`
+- Prefer union types over enums; use `as const` for constants
+- Component refs must expose `{ nativeElement: HTMLElement; focus: VoidFunction; ... }` via `React.forwardRef`
 
-## PR 规范
+### Components
 
-### 标题与内容
+- Functional components with hooks only (no class components)
+- Use CSS logical properties for RTL (`margin-inline-start` not `margin-left`)
+- Never hardcode colors, sizes, or spacing — use design tokens
+- Use `components/_util/is.ts` type guards (`isNumber`, `isString`, etc.) before rolling inline `typeof`/`instanceof`
 
-- PR 标题始终使用英文，格式：`类型: 简短描述`
-- PR 内容默认使用英文，可根据用户语言习惯决定使用中文或英文
-- 示例：`fix: fix button style issues in Safari browser`
+### Naming
 
-### PR 模板（必须使用）
-
-- 英文模板：`.github/PULL_REQUEST_TEMPLATE.md`
-- 中文模板：`.github/PULL_REQUEST_TEMPLATE_CN.md`
-- 使用 `gh pr create` 创建 PR 时，必须手动填充模板内容
-
-### 分支策略
-
-- 新特性开发需基于 `feature` 分支，PR 目标分支也需为 `feature`
-- 其余提交至 `master` 分支
-- 分支命名规范：
-  - 功能开发：`feat/description-of-feature`
-  - 问题修复：`fix/issue-number-or-description`
-  - 文档更新：`docs/what-is-changed`
-  - 代码重构：`refactor/what-is-changed`
-
-### PR 改动类型
-
-- 🆕 新特性提交
-- 🐞 Bug 修复
-- 📝 文档改进
-- 📽️ 演示代码改进
-- 💄 样式/交互改进
-- 🤖 TypeScript 更新
-- 📦 包体积优化
-- ⚡️ 性能优化
-- 🌐 国际化改进
+- Controlled/uncontrolled pairs: `value` / `defaultValue`
+- Open state: `open` (not `visible`)
+- Events: `on` + EventName (`onClick`, `onChange`)
+- Use complete names, no abbreviations
 
 ---
 
-## Changelog 规范
+## Import Rules
 
-### 适用范围
+### Demo files (`components/**/demo/`)
 
-- 本节仅适用于用户明确要求收集/生成 changelog、准备 release PR、版本发布，或正在编辑 `CHANGELOG.en-US.md` / `CHANGELOG.zh-CN.md` 的场景。
-- 普通功能、修复、文档、demo PR 不要求直接修改 `CHANGELOG.en-US.md` / `CHANGELOG.zh-CN.md`；代码 CR 时也不应仅因缺少 CHANGELOG 文件改动而提出 finding。
-- 普通 PR 如需填写 PR 模板中的 Change Log，仅描述本 PR 对用户或开发者的影响，或按模板填写 `N/A` / `No changelog required` / `无需更新日志`。正式 CHANGELOG 由 release owner 在发布流程中统一整理。
+- Use absolute imports only: `antd`, `antd/es/*`, `antd/lib/*`, `antd/locale/*`, `@@/*`
+- Exception: `_semantic*.tsx` files may use relative paths to `.dumi/` helpers
+- No `../`, `../../`, or `./` references to component internals
 
-### 核心原则
+### Test files (`components/**/__tests__/`)
 
-- 文件位置：`CHANGELOG.en-US.md` 和 `CHANGELOG.zh-CN.md`
-- 必须同时提供中英文两个版本
-- 忽略用户无感知的改动（内部重构、纯测试更新、工具链优化等）
-- 描述"对开发者的影响"，而非"具体的实现细节"
-- 尽量给出 PR 链接，并统一添加贡献者链接
-
-### 格式规范
-
-#### 条目格式
-
-- **Emoji 置顶**：每条以 Emoji 开头
-- **不加冒号**：组件名后不使用英文冒号
-- **每条必含组件名**：正文必须出现对应组件名
-- **组件名不用反引号**：Modal、Button 等；属性名/API 用反引号
-- **中英空格**：中文与英文、数字、链接之间保留一个空格
-
-#### 句式
-
-| 语言 | 格式 | 示例 |
-| --- | --- | --- |
-| 中文 | `Emoji 动词 组件名 描述`（动词在前） | `🐞 修复 Button 在暗色主题下 \`color\` 的问题。` |
-| 英文 | `Emoji 动词 组件名 描述`（动词在前） | `🐞 Fix Button reversed \`hover\` colors in dark theme.` |
-
-#### 分组逻辑
-
-- 同一组件有 2 条以上改动时，使用 `- 组件名` 作为分类标题
-- 单项改动直接写单行条目
-
-### Emoji 规范
-
-| Emoji  | 用途                   |
-| ------ | ---------------------- |
-| 🐞     | 修复 Bug               |
-| 💄     | 样式更新或 token 更新  |
-| 🆕     | 新增特性 / 新增属性    |
-| 🔥     | 极其值得关注的新增特性 |
-| 🇺🇸🇨🇳🇬🇧 | 国际化改动             |
-| 📖 📝  | 文档或网站改进         |
-| ✅     | 新增或更新测试用例     |
-| 🛎     | 更新警告/提示信息      |
-| ⌨️ ♿  | 可访问性增强           |
-| 🗑     | 废弃或移除             |
-| 🛠     | 重构或工具链优化       |
-| ⚡️     | 性能提升               |
-
-每条 Changelog 仅选择一个 Emoji，不要在同一条目中叠加多个 Emoji。
-
-编写 Changelog 时，请参考 `CHANGELOG.zh-CN.md` 和 `CHANGELOG.en-US.md` 中已有条目的格式。
+- Use relative imports only: `../`, `../index`, `../../_util/*`, `../../../tests/shared/*`
+- Never import from `antd`, `antd/es/*`, or any alias path for in-repo code
+- Third-party deps (`react`, `@testing-library/react`, `dayjs`) import normally by package name
 
 ---
 
-## 参考资源
+## Documentation
 
-- [API Naming Rules](https://github.com/ant-design/ant-design/wiki/API-Naming-rules) - API 命名规范
-- [轮值规则和版本发布流程](https://github.com/ant-design/ant-design/wiki/%E8%BD%AE%E5%80%BC%E8%A7%84%E5%88%99%E5%92%8C%E7%89%88%E6%9C%AC%E5%8F%91%E5%B8%83%E6%B5%81%E7%A8%8B) - 版本发布流程
-- [Unique Panel Component](https://github.com/ant-design/ant-design/wiki/Unique-Panel-Component) - 独立面板组件规范
+### API Table Format
+
+| Property | Description | Type | Default | Version |
+|----------|-------------|------|---------|---------|
+| disabled | Whether disabled | boolean | false | - |
+| type | Button type | `primary` \| `default` | `default` | - |
+
+- String defaults in backticks; boolean/number as literals; no default → `-`
+- Sort API properties alphabetically; new props must include `Version`
+
+### Anchor IDs
+
+- Chinese headings need explicit English anchors: `## 中文标题 {#english-anchor-id}`
+- Pattern: `^[a-zA-Z][\w-:\.]*$`, max 32 chars; FAQ items must use `faq-` prefix
+
+### i18n
+
+- Locale files: `components/locale/[lang_COUNTRY].ts` (e.g. `zh_CN.ts`)
+- Type entry: `components/locale/index.tsx`
+- Any locale change must be applied to **all** language files
+
+---
+
+## PR & Branch
+
+- PR titles always in English: `fix: fix Button style in Safari`
+- Feature branches → `feature` base; everything else → `master`
+- Branch prefixes: `feat/`, `fix/`, `docs/`, `refactor/`
+- Fill PR template from `.github/PULL_REQUEST_TEMPLATE.md` (EN) or `PULL_REQUEST_TEMPLATE_CN.md`
+
+---
+
+## Changelog
+
+Only update `CHANGELOG.en-US.md` / `CHANGELOG.zh-CN.md` when explicitly preparing a release. Regular PRs just fill the PR template field with a brief impact description or `N/A`.
+
+Format per entry: `Emoji ComponentName description` (verb first). One emoji per entry. Both EN and ZH versions required.
+
+Emoji guide: 🐞 bug fix · 💄 style/token · 🆕 new feature · 🔥 major feature · ✅ tests · 🛠 refactor · ⚡️ perf · 🗑 deprecation
+
+---
+
+## References
+
+- [API Naming Rules](https://github.com/ant-design/ant-design/wiki/API-Naming-rules)
+- [Release Process](https://github.com/ant-design/ant-design/wiki/%E8%BD%AE%E5%80%BC%E8%A7%84%E5%88%99%E5%92%8C%E7%89%88%E6%9C%AC%E5%8F%91%E5%B8%83%E6%B5%81%E7%A8%8B)
+- [Unique Panel Component](https://github.com/ant-design/ant-design/wiki/Unique-Panel-Component)
