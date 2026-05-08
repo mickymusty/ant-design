@@ -348,6 +348,30 @@ const InternalTable = <RecordType extends AnyObject = AnyObject>(
   const rootRef = React.useRef<HTMLDivElement>(null);
   const tblRef = React.useRef<RcReference>(null);
 
+  // =================== Virtual horizontal scroll sync ===================
+  // @rc-component/virtual-list batches onVirtualScroll to one call per
+  // animation frame. This means the header scrollLeft sync also fires once
+  // per frame, causing visible misalignment during fast horizontal scroll
+  // because the body has moved multiple pixels while the header waits for
+  // the next frame. A direct passive listener on the virtual scroll container
+  // fires synchronously on every scroll event and keeps them pixel-perfect.
+  React.useLayoutEffect(() => {
+    if (!virtual || !rootRef.current) return;
+
+    const headerEl = rootRef.current.querySelector<HTMLElement>(`.${prefixCls}-header`);
+    const bodyEl = rootRef.current.querySelector<HTMLElement>(`.${prefixCls}-tbody-virtual`);
+    if (!headerEl || !bodyEl) return;
+
+    const syncScrollLeft = () => {
+      headerEl.scrollLeft = bodyEl.scrollLeft;
+    };
+
+    bodyEl.addEventListener('scroll', syncScrollLeft, { passive: true });
+    return () => {
+      bodyEl.removeEventListener('scroll', syncScrollLeft);
+    };
+  }, [virtual, prefixCls]);
+
   useProxyImperativeHandle(ref, () => ({
     ...tblRef.current!,
     nativeElement: rootRef.current!,
